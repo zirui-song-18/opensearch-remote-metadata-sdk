@@ -1,5 +1,3 @@
-import org.opensearch.gradle.test.RestIntegTestTask
-
 apply plugin: 'java'
 apply plugin: 'idea'
 apply plugin: 'java-library'
@@ -7,16 +5,16 @@ apply plugin: 'eclipse'
 apply plugin: 'com.diffplug.spotless'
 apply from: 'formatter/formatting.gradle'
 
-group = "RenameGroup"
-
-java {
-    targetCompatibility = JavaVersion.VERSION_21
-    sourceCompatibility = JavaVersion.VERSION_21
-}
-
 buildscript {
     ext {
-        opensearch_version = System.getProperty("opensearch.version", "3.0.0-SNAPSHOT")
+        opensearchVersion = System.getProperty("opensearch.version", "3.0.0-SNAPSHOT")
+        log4jVersion = '2.24.2'
+        jacksonVersion = '2.18.2'
+        apacheHttpComponentsVersion = '5.3.1'
+        apacheHttpCoreVersion = '5.2.5'
+        awsSdkVersion = '2.25.40'
+        junitVersion = '5.11.3'
+        mockitoVersion = '5.14.2'
     }
 
     repositories {
@@ -27,7 +25,7 @@ buildscript {
     }
 
     dependencies {
-        classpath "org.opensearch.gradle:build-tools:${opensearch_version}"
+        classpath "org.opensearch.gradle:build-tools:${opensearchVersion}"
         classpath "com.diffplug.spotless:spotless-plugin-gradle:6.25.0"
     }
 }
@@ -39,45 +37,49 @@ repositories {
     maven { url "https://plugins.gradle.org/m2/" }
 }
 
+java {
+    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_21
+}
+
 dependencies {
-    implementation "org.opensearch:opensearch:${opensearch_version}"
-    implementation 'org.apache.logging.log4j:log4j-api:2.24.2'
-    implementation 'org.apache.logging.log4j:log4j-core:2.24.2'
-    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.18.2'
+    implementation "org.opensearch:opensearch:${opensearchVersion}"
+    implementation "org.apache.logging.log4j:log4j-api:${log4jVersion}"
+    implementation "org.apache.logging.log4j:log4j-core:${log4jVersion}"
+    implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${jacksonVersion}"
 
     // For Remote Client: TODO move to new module with SPI
     implementation "org.opensearch.client:opensearch-java:2.10.2"
-    api "org.apache.httpcomponents.client5:httpclient5:5.3.1"
-    api "org.apache.httpcomponents.core5:httpcore5:5.2.5"
+    api "org.apache.httpcomponents.client5:httpclient5:${apacheHttpComponentsVersion}"
+    api "org.apache.httpcomponents.core5:httpcore5:${apacheHttpCoreVersion}"
 
-    // For AWS OpenSearch Service dependency (may need some DDB below): TODO move to new module with SPI
-    implementation("software.amazon.awssdk:apache-client:2.25.40")
+    // For AWS OpenSearch Service and DDB Client: TODO move to new module with SPI
+    implementation(platform("software.amazon.awssdk:bom:${awsSdkVersion}"))
+    implementation("software.amazon.awssdk:apache-client")
+    implementation("software.amazon.awssdk:sdk-core")
+    implementation("software.amazon.awssdk:aws-core")
+    implementation("software.amazon.awssdk:aws-json-protocol")
+    implementation("software.amazon.awssdk:auth")
+    implementation("software.amazon.awssdk:checksums")
+    implementation("software.amazon.awssdk:checksums-spi")
+    implementation("software.amazon.awssdk:dynamodb")
+    implementation("software.amazon.awssdk:endpoints-spi")
+    implementation("software.amazon.awssdk:http-auth-aws")
+    implementation("software.amazon.awssdk:http-auth-spi")
+    implementation("software.amazon.awssdk:http-client-spi")
+    implementation("software.amazon.awssdk:identity-spi")
+    implementation("software.amazon.awssdk:json-utils")
+    implementation("software.amazon.awssdk:metrics-spi")
+    implementation("software.amazon.awssdk:profiles")
+    implementation("software.amazon.awssdk:protocol-core")
+    implementation("software.amazon.awssdk:regions")
+    implementation("software.amazon.awssdk:third-party-jackson-core")
+    implementation("software.amazon.awssdk:url-connection-client")
+    implementation("software.amazon.awssdk:utils")
 
-    // For DDB Client: TODO move to new module with SPI
-    implementation("software.amazon.awssdk:sdk-core:2.25.40")
-    implementation("software.amazon.awssdk:aws-core:2.25.40")
-    implementation "software.amazon.awssdk:aws-json-protocol:2.25.40"
-    implementation("software.amazon.awssdk:auth:2.25.40")
-    implementation("software.amazon.awssdk:checksums:2.25.40")
-    implementation("software.amazon.awssdk:checksums-spi:2.25.40")
-    implementation("software.amazon.awssdk:dynamodb:2.25.40")
-    implementation("software.amazon.awssdk:endpoints-spi:2.25.40")
-    implementation("software.amazon.awssdk:http-auth-aws:2.25.40")
-    implementation("software.amazon.awssdk:http-auth-spi:2.25.40")
-    implementation("software.amazon.awssdk:http-client-spi:2.25.40")
-    implementation("software.amazon.awssdk:identity-spi:2.25.40")
-    implementation "software.amazon.awssdk:json-utils:2.25.40"
-    implementation "software.amazon.awssdk:metrics-spi:2.25.40"
-    implementation("software.amazon.awssdk:profiles:2.25.40")
-    implementation "software.amazon.awssdk:protocol-core:2.25.40"
-    implementation("software.amazon.awssdk:regions:2.25.40")
-    implementation "software.amazon.awssdk:third-party-jackson-core:2.25.40"
-    implementation("software.amazon.awssdk:url-connection-client:2.25.40")
-    implementation("software.amazon.awssdk:utils:2.25.40")
-
-    testImplementation "org.opensearch.test:framework:${opensearch_version}"
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
-    testImplementation 'org.mockito:mockito-core:5.14.2'
+    testImplementation "org.opensearch.test:framework:${opensearchVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter:${junitVersion}"
+    testImplementation "org.mockito:mockito-core:${mockitoVersion}"
 }
 
 test {
@@ -100,20 +102,6 @@ test {
                     "${result.failedTestCount} failed, " +
                     "${result.skippedTestCount} skipped"
         }
-    }
-}
-
-task integTest(type: RestIntegTestTask) {
-    description = "Run tests against a cluster"
-    testClassesDirs = sourceSets.test.output.classesDirs
-    classpath = sourceSets.test.runtimeClasspath
-}
-tasks.named("check").configure { dependsOn(integTest) }
-
-integTest {
-    // The --debug-jvm command-line option makes the cluster debuggable; this makes the tests debuggable
-    if (System.getProperty("test.debug") != null) {
-        jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
     }
 }
 

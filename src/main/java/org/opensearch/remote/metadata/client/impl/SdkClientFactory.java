@@ -38,7 +38,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.util.Strings;
 import org.opensearch.OpenSearchException;
-import org.opensearch.SpecialPermission;
 import org.opensearch.client.Client;
 import org.opensearch.client.json.jackson.JacksonJsonpMapper;
 import org.opensearch.client.opensearch.OpenSearchClient;
@@ -52,14 +51,13 @@ import org.opensearch.remote.metadata.client.SdkClientDelegate;
 
 import javax.net.ssl.SSLContext;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.Map;
 
-import static org.opensearch.remote.metadata.CommonValue.AWS_DYNAMO_DB;
-import static org.opensearch.remote.metadata.CommonValue.AWS_OPENSEARCH_SERVICE;
-import static org.opensearch.remote.metadata.CommonValue.REMOTE_OPENSEARCH;
-import static org.opensearch.remote.metadata.CommonValue.VALID_AWS_OPENSEARCH_SERVICE_NAMES;
+import static org.opensearch.common.util.concurrent.ThreadContextAccess.doPrivileged;
+import static org.opensearch.remote.metadata.common.CommonValue.AWS_DYNAMO_DB;
+import static org.opensearch.remote.metadata.common.CommonValue.AWS_OPENSEARCH_SERVICE;
+import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_OPENSEARCH;
+import static org.opensearch.remote.metadata.common.CommonValue.VALID_AWS_OPENSEARCH_SERVICE_NAMES;
 
 /**
  * A class to create a {@link SdkClient} with implementation based on settings
@@ -129,7 +127,7 @@ public class SdkClientFactory {
         if (region == null) {
             throw new IllegalStateException("REGION environment variable needs to be set!");
         }
-        return PrivilegedAccess.doPrivileged(
+        return doPrivileged(
             () -> DynamoDbClient.builder().region(Region.of(region)).credentialsProvider(createCredentialsProvider()).build()
         );
     }
@@ -178,7 +176,7 @@ public class SdkClientFactory {
     private static OpenSearchClient createAwsOpenSearchServiceClient(String remoteMetadataEndpoint, String region, String signingService) {
         // https://github.com/opensearch-project/opensearch-java/blob/main/guides/auth.md
         return new OpenSearchClient(
-            PrivilegedAccess.doPrivileged(
+            doPrivileged(
                 () -> new AwsSdk2Transport(
                     ApacheHttpClient.builder().build(),
                     remoteMetadataEndpoint.replaceAll("^https?://", ""), // OpenSearch endpoint, without https://
@@ -196,14 +194,5 @@ public class SdkClientFactory {
             .addCredentialsProvider(ContainerCredentialsProvider.builder().build())
             .addCredentialsProvider(InstanceProfileCredentialsProvider.create())
             .build();
-    }
-
-    private static final class PrivilegedAccess {
-        private PrivilegedAccess() {}
-
-        public static <T> T doPrivileged(PrivilegedAction<T> operation) {
-            SpecialPermission.check();
-            return AccessController.doPrivileged(operation);
-        }
     }
 }

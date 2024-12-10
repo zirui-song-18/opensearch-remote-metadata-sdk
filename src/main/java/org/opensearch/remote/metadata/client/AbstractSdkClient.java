@@ -8,16 +8,16 @@
  */
 package org.opensearch.remote.metadata.client;
 
-import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 
+import static org.opensearch.common.util.concurrent.ThreadContextAccess.doPrivileged;
+
 public abstract class AbstractSdkClient implements SdkClientDelegate {
 
-    @SuppressWarnings({ "deprecation", "removal" })
     protected <T> CompletionStage<T> executePrivilegedAsync(PrivilegedAction<T> action, Executor executor) {
-        return CompletableFuture.supplyAsync(() -> AccessController.doPrivileged(action), executor);
+        return CompletableFuture.supplyAsync(() -> doPrivileged(action), executor);
     }
 }

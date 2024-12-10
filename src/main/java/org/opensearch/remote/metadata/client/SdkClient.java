@@ -18,7 +18,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 
-import static org.opensearch.remote.metadata.client.SdkClientUtils.unwrapAndConvertToException;
+import static org.opensearch.remote.metadata.common.SdkClientUtils.unwrapAndConvertToException;
 
 public class SdkClient {
 

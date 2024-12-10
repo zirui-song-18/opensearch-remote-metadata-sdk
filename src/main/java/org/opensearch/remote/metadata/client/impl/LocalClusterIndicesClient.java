@@ -40,7 +40,6 @@ import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.index.query.TermQueryBuilder;
-import org.opensearch.remote.metadata.CommonValue;
 import org.opensearch.remote.metadata.client.AbstractSdkClient;
 import org.opensearch.remote.metadata.client.BulkDataObjectRequest;
 import org.opensearch.remote.metadata.client.BulkDataObjectResponse;
@@ -57,6 +56,7 @@ import org.opensearch.remote.metadata.client.SearchDataObjectRequest;
 import org.opensearch.remote.metadata.client.SearchDataObjectResponse;
 import org.opensearch.remote.metadata.client.UpdateDataObjectRequest;
 import org.opensearch.remote.metadata.client.UpdateDataObjectResponse;
+import org.opensearch.remote.metadata.common.CommonValue;
 import org.opensearch.search.builder.SearchSourceBuilder;
 
 import java.io.IOException;

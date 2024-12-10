@@ -59,6 +59,7 @@ import org.opensearch.remote.metadata.client.SearchDataObjectRequest;
 import org.opensearch.remote.metadata.client.SearchDataObjectResponse;
 import org.opensearch.remote.metadata.client.UpdateDataObjectRequest;
 import org.opensearch.remote.metadata.client.UpdateDataObjectResponse;
+import org.opensearch.remote.metadata.common.TestDataObject;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.internal.InternalSearchResponse;
 import org.opensearch.threadpool.ScalingExecutorBuilder;

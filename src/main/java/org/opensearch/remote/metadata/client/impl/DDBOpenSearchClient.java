@@ -60,11 +60,12 @@ import org.opensearch.remote.metadata.client.GetDataObjectResponse;
 import org.opensearch.remote.metadata.client.PutDataObjectRequest;
 import org.opensearch.remote.metadata.client.PutDataObjectResponse;
 import org.opensearch.remote.metadata.client.SdkClient;
-import org.opensearch.remote.metadata.client.SdkClientUtils;
 import org.opensearch.remote.metadata.client.SearchDataObjectRequest;
 import org.opensearch.remote.metadata.client.SearchDataObjectResponse;
 import org.opensearch.remote.metadata.client.UpdateDataObjectRequest;
 import org.opensearch.remote.metadata.client.UpdateDataObjectResponse;
+import org.opensearch.remote.metadata.common.JsonTransformer;
+import org.opensearch.remote.metadata.common.SdkClientUtils;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -82,7 +83,7 @@ import java.util.stream.Collectors;
 import static org.opensearch.common.xcontent.json.JsonXContent.jsonXContent;
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_PRIMARY_TERM;
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_SEQ_NO;
-import static org.opensearch.remote.metadata.CommonValue.TENANT_ID;
+import static org.opensearch.remote.metadata.common.CommonValue.TENANT_ID;
 
 /**
  * DDB implementation of {@link SdkClient}. DDB table name will be mapped to index name.

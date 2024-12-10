@@ -6,22 +6,30 @@
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
  */
-package org.opensearch.remote.metadata;
+package org.opensearch.remote.metadata.common;
 
 import java.util.Set;
 
 public class CommonValue {
     public static final String TENANT_ID = "tenant_id";
 
+    /** The key for remote metadata type. */
+    public static final String REMOTE_METADATA_TYPE_KEY = "remote_metadata_type";
+    /** The key for remote metadata endpoint, applicable to remote clusters or Zero-ETL DynamoDB sinks */
+    public static final String REMOTE_METADATA_ENDPOINT_KEY = "remote_metadata_endpoint";
+    /** The key for remote metadata region, applicable for AWS SDK v2 connections */
+    public static final String REMOTE_METADATA_REGION_KEY = "remote_metadata_region";
+    /** The key for remote metadata service name used by service-specific SDKs */
+    public static final String REMOTE_METADATA_SERVICE_NAME_KEY = "remote_metadata_service_name";
+
     /** The value for remote metadata type for a remote OpenSearch cluster compatible with OpenSearch Java Client. */
     public static final String REMOTE_OPENSEARCH = "RemoteOpenSearch";
+    /** The value for remote metadata type for a remote cluster on AWS DynamoDB and Zero-ETL replication to OpenSearch */
+    public static final String AWS_DYNAMO_DB = "AWSDynamoDB";
     /** The value for remote metadata type for a remote cluster on AWS OpenSearch Service using AWS SDK v2. */
     public static final String AWS_OPENSEARCH_SERVICE = "AWSOpenSearchService";
     private static final String AOS_SERVICE_NAME = "es";
     private static final String AOSS_SERVICE_NAME = "aoss";
     /** Service Names compatible with AWS SDK v2. */
     public static final Set<String> VALID_AWS_OPENSEARCH_SERVICE_NAMES = Set.of(AOS_SERVICE_NAME, AOSS_SERVICE_NAME);
-
-    /** The value for remote metadata type for a remote cluster on AWS Dynamo DB and Zero-ETL replication to OpenSearch */
-    public static final String AWS_DYNAMO_DB = "AWSDynamoDB";
 }
