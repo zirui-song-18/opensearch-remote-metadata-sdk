@@ -1,0 +1,34 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+dependencies {
+    implementation project(':opensearch-remote-metadata-sdk-core')
+    testImplementation testFixtures(project(':opensearch-remote-metadata-sdk-core'))
+    implementation project(':opensearch-remote-metadata-sdk-remote-client')
+
+    implementation "org.opensearch.client:opensearch-java:${opensearch_java_version}"
+
+    implementation(platform("software.amazon.awssdk:bom:${aws_sdk_version}"))
+    implementation("software.amazon.awssdk:apache-client")
+    implementation("software.amazon.awssdk:sdk-core")
+    implementation("software.amazon.awssdk:aws-core")
+    implementation("software.amazon.awssdk:aws-json-protocol")
+    implementation("software.amazon.awssdk:auth")
+    implementation("software.amazon.awssdk:checksums")
+    implementation("software.amazon.awssdk:checksums-spi")
+    implementation("software.amazon.awssdk:endpoints-spi")
+    implementation("software.amazon.awssdk:http-auth-aws")
+    implementation("software.amazon.awssdk:http-auth-spi")
+    implementation("software.amazon.awssdk:http-client-spi")
+    implementation("software.amazon.awssdk:identity-spi")
+    implementation("software.amazon.awssdk:json-utils")
+    implementation("software.amazon.awssdk:metrics-spi")
+    implementation("software.amazon.awssdk:profiles")
+    implementation("software.amazon.awssdk:protocol-core")
+    implementation("software.amazon.awssdk:regions")
+    implementation("software.amazon.awssdk:third-party-jackson-core")
+    implementation("software.amazon.awssdk:url-connection-client")
+    implementation("software.amazon.awssdk:utils")
+}
