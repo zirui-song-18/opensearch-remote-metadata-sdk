@@ -94,6 +94,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.opensearch.common.util.concurrent.ThreadContextAccess.doPrivileged;
@@ -142,7 +143,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         this.dynamoDbAsyncClient = createDynamoDbAsyncClient(region);
         this.aosOpenSearchClient = new AOSOpenSearchClient();
         this.aosOpenSearchClient.initialize(metadataSettings);
-        listTablesAndCacheGlobalResources();
+        cacheGlobalResources();
     }
 
     /**
@@ -174,12 +175,14 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         this.tenantIdField = tenantIdField;
     }
 
-    private void listTablesAndCacheGlobalResources() {
-        this.dynamoDbAsyncClient.listTables().thenAccept(x -> {
-            Map<String, CompletableFuture<DescribeTableResponse>> describeTableCompletableFutureMap = getDescribeTableCompletableFutureMap(x);
+    private void cacheGlobalResources() {
+        this.dynamoDbAsyncClient.listTables().thenAccept(tables -> {
+            Map<String, CompletableFuture<DescribeTableResponse>> describeTableCompletableFutureMap = getDescribeTableCompletableFutureMap(tables);
             CompletableFuture.allOf(describeTableCompletableFutureMap.values().toArray(new CompletableFuture[0])).exceptionally(ex -> {
                 log.error("Failed to describe DDB tables", ex);
-                throw new OpenSearchException(ex);
+                throw new OpenSearchStatusException("Failed to describe DDB tables",
+                        RestStatus.INTERNAL_SERVER_ERROR,
+                        ex);
             }).thenAccept(y -> {
                 List<String> potentialGlobalResourceTables = new ArrayList<>();
                 for (Map.Entry<String, CompletableFuture<DescribeTableResponse>> responseFuture : describeTableCompletableFutureMap.entrySet()) {
@@ -190,13 +193,17 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
                 }
                 if (!potentialGlobalResourceTables.isEmpty()) {
                     log.info("Found potential global resource tables: {}", potentialGlobalResourceTables);
-                    Map<String, CompletableFuture<QueryResponse>> fetchGlobalResourcesCompletableFutureMap = new HashMap<>();
-                    potentialGlobalResourceTables.forEach(tn -> {
-                        fetchGlobalResourcesCompletableFutureMap.put(tn, fetchGlobalResources(tn));
-                    });
+                    Map<String, CompletableFuture<QueryResponse>> fetchGlobalResourcesCompletableFutureMap =
+                            potentialGlobalResourceTables.stream()
+                                    .collect(Collectors.toMap(
+                                            Function.identity(),
+                                            this::fetchGlobalResources
+                                    ));
                     CompletableFuture.allOf(fetchGlobalResourcesCompletableFutureMap.values().toArray(new CompletableFuture[0])).exceptionally(ex -> {
                         log.error("Failed to execute DDB query", ex);
-                        throw new OpenSearchException(ex);
+                        throw new OpenSearchStatusException("Failed to execute DDB query",
+                                RestStatus.INTERNAL_SERVER_ERROR,
+                                ex);
                     }).thenAccept(z -> {
                         for (Map.Entry<String, CompletableFuture<QueryResponse>> responseFuture : fetchGlobalResourcesCompletableFutureMap.entrySet()) {
                             QueryResponse queryResponse = responseFuture.getValue().join();
@@ -384,16 +391,16 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
             Map<String, AttributeValue> item = GLOBAL_RESOURCES_CACHE.get(checkingKey);
             // Replace the tenant id in the global resource response to actual tenant id to bypass the validation of the resources:
             // e.g.: https://github.com/opensearch-project/ml-commons/blob/main/ml-algorithms/src/main/java/org/opensearch/ml/engine/algorithms/agent/MLAgentExecutor.java#L206
-            Long seqNo = null;
+            Long seqNo = Optional.ofNullable(item.get(SEQ_NO_KEY))
+                    .map(AttributeValue::n)
+                    .map(Long::parseLong)
+                    .orElse(null);
             ObjectNode sourceObject = null;
-            if (item.containsKey(SEQ_NO_KEY)) {
-                seqNo = Optional.ofNullable(item.get(SEQ_NO_KEY).n())
-                        .map(Long::parseLong)
-                        .orElse(null);
-            } else if (item.containsKey(SOURCE)) {
+            if (item.containsKey(SOURCE)) {
                 sourceObject = DDBJsonTransformer.convertDDBAttributeValueMapToObjectNode(item.get(SOURCE).m());
             }
             if (sourceObject == null) {
+                log.error("Empty global resource in cache!");
                 throw new OpenSearchStatusException("Empty global resource in cache!", RestStatus.INTERNAL_SERVER_ERROR);
             } else {
                 try {
@@ -456,7 +463,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         }
         final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
         if (DEFAULT_GLOBAL_TENANT_ID.equals(tenantId)) {
-            throw new OpenSearchStatusException("Global tenant id is reserved for internal use, do not accept passing it from request!", RestStatus.BAD_REQUEST);
+            throw new OpenSearchStatusException("Global tenant id is reserved for internal use.", RestStatus.INTERNAL_SERVER_ERROR);
         }
         return doPrivileged(() -> {
             try {
