@@ -13,6 +13,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.concurrent.OpenSearchExecutors;
+import org.opensearch.threadpool.ScalingExecutorBuilder;
+import org.opensearch.threadpool.Scheduler;
+import org.opensearch.threadpool.ThreadPool;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.ContainerCredentialsProvider;
@@ -101,6 +107,7 @@ import static org.opensearch.common.util.concurrent.ThreadContextAccess.doPrivil
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_PRIMARY_TERM;
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_SEQ_NO;
 import static org.opensearch.remote.metadata.common.CommonValue.AWS_DYNAMO_DB;
+import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_GLOBAL_TENANT_ID_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.TENANT_ID_FIELD_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.VALID_AWS_OPENSEARCH_SERVICE_NAMES;
 
@@ -126,13 +133,24 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
 
     private DynamoDbAsyncClient dynamoDbAsyncClient;
     private AOSOpenSearchClient aosOpenSearchClient;
+    private static ThreadPool threadPool;
+    private Scheduler.Cancellable globalResourcesCacheScheduler;
 
-    public static String DEFAULT_GLOBAL_TENANT_ID = "_global_tenant_id";
+    public static String GLOBAL_TENANT_ID;
     private static final Map<String, Map<String, AttributeValue>> GLOBAL_RESOURCES_CACHE = new ConcurrentHashMap<>();
+    private static final TimeValue CACHE_REFRESH_INTERVAL = TimeValue.timeValueMinutes(5);
 
     @Override
     public boolean supportsMetadataType(String metadataType) {
         return AWS_DYNAMO_DB.equals(metadataType);
+    }
+
+    /**
+     * Set the ThreadPool instance for scheduling tasks
+     * This should be called by the plugin initialization code
+     */
+    public static void setThreadPool() {
+        // SHOULD DEVELOP HERE
     }
 
     @Override
@@ -143,7 +161,11 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         this.dynamoDbAsyncClient = createDynamoDbAsyncClient(region);
         this.aosOpenSearchClient = new AOSOpenSearchClient();
         this.aosOpenSearchClient.initialize(metadataSettings);
-        cacheGlobalResources();
+        GLOBAL_TENANT_ID = metadataSettings.get(REMOTE_METADATA_GLOBAL_TENANT_ID_KEY);
+        if (GLOBAL_TENANT_ID != null) {
+            cacheGlobalResources();
+            startGlobalResourcesCacheScheduler();
+        }
     }
 
     /**
@@ -175,14 +197,22 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         this.tenantIdField = tenantIdField;
     }
 
+    /**
+     * Package private constructor for testing with ThreadPool
+     */
+    DDBOpenSearchClient(DynamoDbAsyncClient dynamoDbAsyncClient, AOSOpenSearchClient aosOpenSearchClient, String tenantIdField, ThreadPool tp) {
+        this.dynamoDbAsyncClient = dynamoDbAsyncClient;
+        this.aosOpenSearchClient = aosOpenSearchClient;
+        this.tenantIdField = tenantIdField;
+        threadPool = tp;
+    }
+
     private void cacheGlobalResources() {
         this.dynamoDbAsyncClient.listTables().thenAccept(tables -> {
             Map<String, CompletableFuture<DescribeTableResponse>> describeTableCompletableFutureMap = getDescribeTableCompletableFutureMap(tables);
             CompletableFuture.allOf(describeTableCompletableFutureMap.values().toArray(new CompletableFuture[0])).exceptionally(ex -> {
                 log.error("Failed to describe DDB tables", ex);
-                throw new OpenSearchStatusException("Failed to describe DDB tables",
-                        RestStatus.INTERNAL_SERVER_ERROR,
-                        ex);
+                return null;
             }).thenAccept(y -> {
                 List<String> potentialGlobalResourceTables = new ArrayList<>();
                 for (Map.Entry<String, CompletableFuture<DescribeTableResponse>> responseFuture : describeTableCompletableFutureMap.entrySet()) {
@@ -201,9 +231,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
                                     ));
                     CompletableFuture.allOf(fetchGlobalResourcesCompletableFutureMap.values().toArray(new CompletableFuture[0])).exceptionally(ex -> {
                         log.error("Failed to execute DDB query", ex);
-                        throw new OpenSearchStatusException("Failed to execute DDB query",
-                                RestStatus.INTERNAL_SERVER_ERROR,
-                                ex);
+                        return null;
                     }).thenAccept(z -> {
                         for (Map.Entry<String, CompletableFuture<QueryResponse>> responseFuture : fetchGlobalResourcesCompletableFutureMap.entrySet()) {
                             QueryResponse queryResponse = responseFuture.getValue().join();
@@ -230,7 +258,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
     }
 
     private CompletableFuture<QueryResponse> fetchGlobalResources(String tableName) {
-        Map<String, AttributeValue> attributeValueMap = ImmutableMap.of(":hash_key", AttributeValue.builder().s(DEFAULT_GLOBAL_TENANT_ID).build());
+        Map<String, AttributeValue> attributeValueMap = ImmutableMap.of(":hash_key", AttributeValue.builder().s(GLOBAL_TENANT_ID).build());
         QueryRequest request = QueryRequest.builder()
                 .tableName(tableName)
                 .keyConditionExpression("#tid = " + ":hash_key")
@@ -271,7 +299,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
             throw new OpenSearchStatusException("Request body validation failed.", RestStatus.BAD_REQUEST, e);
         }
         final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
-        if (DEFAULT_GLOBAL_TENANT_ID.equals(tenantId)) {
+        if (GLOBAL_TENANT_ID.equals(tenantId)) {
             throw new OpenSearchStatusException("Global tenant id is reserved for internal use, do not accept passing it from request!", RestStatus.BAD_REQUEST);
         }
         final String tableName = request.index();
@@ -333,11 +361,41 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         Executor executor,
         Boolean isMultiTenancyEnabled
     ) {
-        CompletionStage<GetDataObjectResponse> getDataObjectFromCache = getGlobalResourceDataFromCache(request);
-        if (getDataObjectFromCache != null) {
-            return getDataObjectFromCache;
+        if (GLOBAL_TENANT_ID != null) {
+            CompletionStage<GetDataObjectResponse> getDataObjectFromCache = getGlobalResourceDataFromCache(request);
+            if (getDataObjectFromCache != null) {
+                return getDataObjectFromCache;
+            }
+            final GetItemRequest getItemRequest = buildGetItemRequest(request.tenantId(), request.id(), request.index());
+            CompletionStage<GetDataObjectResponse> getDataFromDynamoDB = fetchDataFromDynamoDB(getItemRequest, request);
+            return getDataFromDynamoDB.thenCompose(response -> {
+                // Check if the response has actual data
+                if (response != null && response.source() != null && !response.source().isEmpty()) {
+                    // If we have valid data, return it
+                    return CompletableFuture.completedFuture(response);
+                }
+
+                // If we don't have valid data, proceed with the global tenant request
+                final GetItemRequest getGlobalItemRequest = buildGetItemRequest(GLOBAL_TENANT_ID, request.id(), request.index());
+                return fetchDataFromDynamoDB(getGlobalItemRequest, request);
+            });
+        } else {
+            final GetItemRequest getItemRequest = buildGetItemRequest(request.tenantId(), request.id(), request.index());
+            return fetchDataFromDynamoDB(getItemRequest, request);
         }
-        final GetItemRequest getItemRequest = buildGetItemRequest(request.tenantId(), request.id(), request.index());
+    }
+
+    /**
+     * Fetches data from DynamoDB and transforms it into a GetDataObjectResponse.
+     *
+     * @param getItemRequest The DynamoDB GetItem request
+     * @param originalRequest The original GetDataObject request
+     * @return A CompletionStage with the GetDataObjectResponse
+     */
+    private CompletionStage<GetDataObjectResponse> fetchDataFromDynamoDB(
+            GetItemRequest getItemRequest,
+            GetDataObjectRequest originalRequest
+    ) {
         return doPrivileged(() -> dynamoDbAsyncClient.getItem(getItemRequest)).thenApply(getItemResponse -> {
             try {
                 ObjectNode sourceObject;
@@ -358,8 +416,8 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
                     ? null
                     : Long.parseLong(sequenceNumberString);
                 String simulatedGetResponse = simulateOpenSearchResponse(
-                    request.index(),
-                    request.id(),
+                    originalRequest.index(),
+                    originalRequest.id(),
                     source,
                     sequenceNumber,
                     Map.of("found", found)
@@ -377,7 +435,11 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
                         simulatedGetResponse
                     )
                 ).getSourceAsMap();
-                return GetDataObjectResponse.builder().id(request.id()).parser(parser).source(sourceAsMap).build();
+                return GetDataObjectResponse.builder()
+                        .id(originalRequest.id())
+                        .parser(parser)
+                        .source(sourceAsMap)
+                        .build();
             } catch (IOException e) {
                 // Rethrow unchecked exception on XContent parsing error
                 throw new OpenSearchStatusException("Failed to parse response", RestStatus.INTERNAL_SERVER_ERROR);
@@ -462,7 +524,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
             throw new OpenSearchStatusException("Request body validation failed.", RestStatus.BAD_REQUEST, e);
         }
         final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
-        if (DEFAULT_GLOBAL_TENANT_ID.equals(tenantId)) {
+        if (GLOBAL_TENANT_ID.equals(tenantId)) {
             throw new OpenSearchStatusException("Global tenant id is reserved for internal use.", RestStatus.INTERNAL_SERVER_ERROR);
         }
         return doPrivileged(() -> {
@@ -583,7 +645,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         Boolean isMultiTenancyEnabled
     ) {
         final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
-        if (DEFAULT_GLOBAL_TENANT_ID.equals(tenantId)) {
+        if (GLOBAL_TENANT_ID.equals(tenantId)) {
             throw new OpenSearchStatusException("Global tenant id is reserved for internal use, do not accept passing it from request!", RestStatus.BAD_REQUEST);
         }
         final DeleteItemRequest deleteItemRequest = DeleteItemRequest.builder()
@@ -856,8 +918,28 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
             .build();
     }
 
+    private void startGlobalResourcesCacheScheduler() {
+        if (threadPool != null) {
+            log.info("Starting global resources cache scheduler with interval: {}", CACHE_REFRESH_INTERVAL);
+            globalResourcesCacheScheduler = threadPool.scheduleWithFixedDelay(
+                this::cacheGlobalResources,
+                CACHE_REFRESH_INTERVAL,
+                ThreadPool.Names.GENERIC
+            );
+        }
+    }
+
+    private void stopGlobalResourcesCacheScheduler() {
+        if (globalResourcesCacheScheduler != null) {
+            globalResourcesCacheScheduler.cancel();
+            globalResourcesCacheScheduler = null;
+            log.info("Stopped global resources cache scheduler");
+        }
+    }
+
     @Override
     public void close() throws Exception {
+        stopGlobalResourcesCacheScheduler();
         if (dynamoDbAsyncClient != null) {
             dynamoDbAsyncClient.close();
         }
