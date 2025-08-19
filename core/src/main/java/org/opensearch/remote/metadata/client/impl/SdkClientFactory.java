@@ -12,8 +12,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.remote.metadata.client.AbstractSdkClient;
 import org.opensearch.remote.metadata.client.SdkClient;
 import org.opensearch.remote.metadata.client.SdkClientDelegate;
+import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
 
 import java.util.Iterator;
@@ -39,7 +41,7 @@ public class SdkClientFactory {
      * @return An instance of SdkClient which delegates to an implementation based on Remote Metadata Type. The {@link ForkJoinPool#commonPool()} will be used by default for async execution.
      */
     public static SdkClient createSdkClient(Client client, NamedXContentRegistry xContentRegistry, Map<String, String> metadataSettings) {
-        return createSdkClient(client, xContentRegistry, metadataSettings, ForkJoinPool.commonPool());
+        return createSdkClient(client, xContentRegistry, metadataSettings, ForkJoinPool.commonPool(), null);
     }
 
     /**
@@ -55,6 +57,25 @@ public class SdkClientFactory {
         NamedXContentRegistry xContentRegistry,
         Map<String, String> metadataSettings,
         Executor defaultExecutor
+    ) {
+        return createSdkClient(client, xContentRegistry, metadataSettings, defaultExecutor, null);
+    }
+
+    /**
+     * Create a new SdkClient with implementation determined by the value of the Remote Metadata Type setting
+     * @param client The OpenSearch node client used as the default implementation
+     * @param xContentRegistry The OpenSearch XContentRegistry
+     * @param metadataSettings A map defining the remote metadata type and configuration
+     * @param defaultExecutor The default executor to use if another one is not specified
+     * @param threadPool The ThreadPool to use for scheduling tasks
+     * @return An instance of SdkClient which delegates to an implementation based on Remote Metadata Type
+     */
+    public static SdkClient createSdkClient(
+        Client client,
+        NamedXContentRegistry xContentRegistry,
+        Map<String, String> metadataSettings,
+        Executor defaultExecutor,
+        ThreadPool threadPool
     ) {
         String remoteMetadataType = metadataSettings.get(REMOTE_METADATA_TYPE_KEY);
         Boolean multiTenancy = Boolean.parseBoolean(metadataSettings.get(TENANT_AWARE_KEY));
@@ -73,6 +94,9 @@ public class SdkClientFactory {
                 if (delegate.supportsMetadataType(remoteMetadataType)) {
                     log.info("Using {} as metadata store.", remoteMetadataType);
                     delegate.initialize(metadataSettings);
+                    if (threadPool != null && delegate instanceof AbstractSdkClient) {
+                        ((AbstractSdkClient) delegate).setThreadPool(threadPool);
+                    }
                     return new SdkClient(delegate, defaultExecutor, multiTenancy);
                 }
             }

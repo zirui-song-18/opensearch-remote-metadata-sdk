@@ -14,6 +14,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 
+import org.opensearch.threadpool.ThreadPool;
+
 import static org.opensearch.common.util.concurrent.ThreadContextAccess.doPrivileged;
 import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_ENDPOINT_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_REGION_KEY;
@@ -27,6 +29,7 @@ import static org.opensearch.remote.metadata.common.CommonValue.TENANT_ID_FIELD_
 public abstract class AbstractSdkClient implements SdkClientDelegate {
 
     protected String tenantIdField;
+    protected ThreadPool threadPool;
 
     protected String remoteMetadataType;
     protected String remoteMetadataEndpoint;
@@ -41,6 +44,13 @@ public abstract class AbstractSdkClient implements SdkClientDelegate {
         this.remoteMetadataEndpoint = metadataSettings.get(REMOTE_METADATA_ENDPOINT_KEY);
         this.region = metadataSettings.get(REMOTE_METADATA_REGION_KEY);
         this.serviceName = metadataSettings.get(REMOTE_METADATA_SERVICE_NAME_KEY);
+    }
+
+    /**
+     * Set the ThreadPool for this client
+     */
+    public void setThreadPool(ThreadPool threadPool) {
+        this.threadPool = threadPool;
     }
 
     /**

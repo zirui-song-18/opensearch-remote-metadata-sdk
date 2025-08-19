@@ -107,6 +107,7 @@ import static org.opensearch.common.util.concurrent.ThreadContextAccess.doPrivil
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_PRIMARY_TERM;
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_SEQ_NO;
 import static org.opensearch.remote.metadata.common.CommonValue.AWS_DYNAMO_DB;
+import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_CACHE_REFRESH_INTERVAL_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_GLOBAL_TENANT_ID_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.TENANT_ID_FIELD_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.VALID_AWS_OPENSEARCH_SERVICE_NAMES;
@@ -133,25 +134,19 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
 
     private DynamoDbAsyncClient dynamoDbAsyncClient;
     private AOSOpenSearchClient aosOpenSearchClient;
-    private static ThreadPool threadPool;
     private Scheduler.Cancellable globalResourcesCacheScheduler;
 
     public static String GLOBAL_TENANT_ID;
     private static final Map<String, Map<String, AttributeValue>> GLOBAL_RESOURCES_CACHE = new ConcurrentHashMap<>();
-    private static final TimeValue CACHE_REFRESH_INTERVAL = TimeValue.timeValueMinutes(5);
+    private static TimeValue CACHE_REFRESH_INTERVAL;
+    private static final long DEFAULT_REFRESH_MINUTES = 5;
 
     @Override
     public boolean supportsMetadataType(String metadataType) {
         return AWS_DYNAMO_DB.equals(metadataType);
     }
 
-    /**
-     * Set the ThreadPool instance for scheduling tasks
-     * This should be called by the plugin initialization code
-     */
-    public static void setThreadPool() {
-        // SHOULD DEVELOP HERE
-    }
+
 
     @Override
     public void initialize(Map<String, String> metadataSettings) {
@@ -162,6 +157,15 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         this.aosOpenSearchClient = new AOSOpenSearchClient();
         this.aosOpenSearchClient.initialize(metadataSettings);
         GLOBAL_TENANT_ID = metadataSettings.get(REMOTE_METADATA_GLOBAL_TENANT_ID_KEY);
+        CACHE_REFRESH_INTERVAL = Optional.ofNullable(metadataSettings.get(REMOTE_METADATA_CACHE_REFRESH_INTERVAL_KEY))
+                .map(value -> {
+                    try {
+                        return TimeValue.timeValueMinutes(Long.parseLong(value));
+                    } catch (NumberFormatException e) {
+                        return TimeValue.timeValueMinutes(DEFAULT_REFRESH_MINUTES);
+                    }
+                })
+                .orElse(TimeValue.timeValueMinutes(DEFAULT_REFRESH_MINUTES));
         if (GLOBAL_TENANT_ID != null) {
             cacheGlobalResources();
             startGlobalResourcesCacheScheduler();
@@ -204,7 +208,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         this.dynamoDbAsyncClient = dynamoDbAsyncClient;
         this.aosOpenSearchClient = aosOpenSearchClient;
         this.tenantIdField = tenantIdField;
-        threadPool = tp;
+        this.threadPool = tp;
     }
 
     private void cacheGlobalResources() {
@@ -974,6 +978,8 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
                 CACHE_REFRESH_INTERVAL,
                 ThreadPool.Names.GENERIC
             );
+        } else {
+            log.warn("ThreadPool not available, global resources cache scheduler not started");
         }
     }
 
