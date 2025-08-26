@@ -84,10 +84,6 @@ public class AOSOpenSearchClient extends RemoteClusterIndicesClient {
         return GLOBAL_RESOURCES_CACHE.containsKey(buildGlobalCacheKey(index, id));
     }
 
-    private String buildGlobalCacheKey(String index, String id) {
-        return index + ":" + id;
-    }
-
     private void cacheGlobalResources() {
         if (openSearchAsyncClient == null) {
             log.warn("OpenSearch client not initialized, skipping global resources caching");
