@@ -17,6 +17,7 @@ import org.opensearch.action.DocWriteRequest.OpType;
 import org.opensearch.action.bulk.BulkRequest;
 import org.opensearch.action.delete.DeleteRequest;
 import org.opensearch.action.get.GetRequest;
+import org.opensearch.action.get.GetResponse;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.update.UpdateRequest;
@@ -57,7 +58,6 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 import static org.opensearch.action.support.WriteRequest.RefreshPolicy.IMMEDIATE;
@@ -173,7 +173,9 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
             client.get(
                 getRequest,
                 ActionListener.wrap(
-                    getResponse -> future.complete(new GetDataObjectResponse(getResponse)),
+                    getResponse -> future.complete(
+                        new GetDataObjectResponse(replaceGlobalTenantId(getResponse, request.tenantId(), isMultiTenancyEnabled))
+                    ),
                     e -> future.completeExceptionally(
                         new OpenSearchStatusException(
                             "Failed to get data object from index " + request.index(),
@@ -185,6 +187,21 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
             );
             return future;
         });
+    }
+
+    private GetResponse replaceGlobalTenantId(GetResponse response, String userTenantId, Boolean isMultiTenancyEnabled) {
+        if (!isMultiTenancyEnabled || response == null || !response.isExists()) {
+            return response;
+        }
+        Map<String, Object> sourceMap = response.getSourceAsMap();
+        if (sourceMap != null && sourceMap.containsKey(tenantIdField)) {
+            Object responseTenantId = sourceMap.get(tenantIdField);
+            // Replace global tenant ID with user tenant ID if it matches
+            if (GLOBAL_TENANT_ID.equals(responseTenantId)) {
+                sourceMap.put(tenantIdField, userTenantId);
+            }
+        }
+        return response; // TODO: check where the tenant id in response is replaced
     }
 
     private GetRequest createGetRequest(GetDataObjectRequest request) {
@@ -389,7 +406,22 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
 
     @Override
     public boolean isGlobalResource(String index, String id) {
-        // TODO: check whether the tenant id in the document matches global tenant ID
-        return false;
+        // Check whether the tenant id in the document matches global tenant ID
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        return doPrivileged(() -> {
+            GetRequest getRequest = new GetRequest(index, id);
+            client.get(getRequest, ActionListener.wrap(getResponse -> {
+                if (getResponse.isExists() && getResponse.getSourceAsMap().containsKey(tenantIdField)) {
+                    Object tenantId = getResponse.getSourceAsMap().get(tenantIdField);
+                    future.complete(GLOBAL_TENANT_ID.equals(tenantId));
+                } else {
+                    future.complete(false);
+                }
+            }, e -> {
+                log.error("Error checking if resource is global for index: {} id: {}", index, id, e);
+                future.complete(false);
+            }));
+            return future.join();
+        });
     }
 }
