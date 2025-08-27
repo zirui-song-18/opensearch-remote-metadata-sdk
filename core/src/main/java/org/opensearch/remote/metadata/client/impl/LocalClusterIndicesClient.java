@@ -196,12 +196,12 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
         Map<String, Object> sourceMap = response.getSourceAsMap();
         if (sourceMap != null && sourceMap.containsKey(tenantIdField)) {
             Object responseTenantId = sourceMap.get(tenantIdField);
-            // Replace global tenant ID with user tenant ID if it matches
+            // Replace global tenant ID in place with user tenant ID if it matches
             if (GLOBAL_TENANT_ID.equals(responseTenantId)) {
                 sourceMap.put(tenantIdField, userTenantId);
             }
         }
-        return response; // TODO: check where the tenant id in response is replaced
+        return response;
     }
 
     private GetRequest createGetRequest(GetDataObjectRequest request) {
