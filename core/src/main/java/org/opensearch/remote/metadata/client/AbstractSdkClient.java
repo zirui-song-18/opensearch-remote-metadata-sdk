@@ -8,13 +8,13 @@
  */
 package org.opensearch.remote.metadata.client;
 
+import org.opensearch.threadpool.ThreadPool;
+
 import java.security.PrivilegedAction;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
-
-import org.opensearch.threadpool.ThreadPool;
 
 import static org.opensearch.common.util.concurrent.ThreadContextAccess.doPrivileged;
 import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_ENDPOINT_KEY;
