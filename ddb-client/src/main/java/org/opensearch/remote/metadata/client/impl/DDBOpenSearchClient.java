@@ -275,10 +275,6 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         return dynamoDbAsyncClient.query(request);
     }
 
-    private String buildGlobalCacheKey(String index, String id) {
-        return index + ":" + id;
-    }
-
     /**
      * DDB implementation to write data objects to DDB table. Tenant ID will be used as hash key and document ID will
      * be used as range key. If tenant ID is not defined a default tenant ID will be used. If document ID is not defined
@@ -480,7 +476,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
     }
 
     private CompletionStage<GetDataObjectResponse> getGlobalResourceDataFromCache(GetDataObjectRequest request) {
-        String checkingKey = request.index() + ":" + request.id();
+        String checkingKey = buildGlobalCacheKey(request.index(), request.id());
         if (GLOBAL_RESOURCES_CACHE.containsKey(checkingKey)) {
             Map<String, AttributeValue> item = GLOBAL_RESOURCES_CACHE.get(checkingKey);
             // Replace the tenant id in the global resource response to actual tenant id to bypass the validation of the resources:

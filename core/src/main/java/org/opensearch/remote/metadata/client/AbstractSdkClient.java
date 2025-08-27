@@ -76,4 +76,8 @@ public abstract class AbstractSdkClient implements SdkClientDelegate {
         }
         return id != null;
     }
+
+    protected String buildGlobalCacheKey(String index, String id) {
+        return index + ":" + id;
+    }
 }
