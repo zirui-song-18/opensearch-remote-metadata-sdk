@@ -20,7 +20,6 @@ import org.opensearch.action.get.GetRequest;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.update.UpdateRequest;
-import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.Strings;
@@ -51,15 +50,11 @@ import org.opensearch.remote.metadata.client.UpdateDataObjectResponse;
 import org.opensearch.remote.metadata.client.WriteDataObjectRequest;
 import org.opensearch.remote.metadata.common.CommonValue;
 import org.opensearch.search.builder.SearchSourceBuilder;
-import org.opensearch.threadpool.Scheduler;
-import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,13 +70,9 @@ import static org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS;
  */
 public class LocalClusterIndicesClient extends AbstractSdkClient {
     private static final Logger log = LogManager.getLogger(LocalClusterIndicesClient.class);
-    private static final long DEFAULT_REFRESH_MINUTES = 5;
-    private static final Map<String, Map<String, Object>> GLOBAL_RESOURCES_CACHE = new ConcurrentHashMap<>();
 
     private final Client client;
     private final String GLOBAL_TENANT_ID;
-    private final TimeValue CACHE_REFRESH_INTERVAL;
-    private Scheduler.Cancellable globalResourcesCacheScheduler;
 
     @Override
     public boolean supportsMetadataType(String metadataType) {
@@ -96,21 +87,7 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
      */
     public LocalClusterIndicesClient(Client client, NamedXContentRegistry xContentRegistry, Map<String, String> metadataSettings) {
         super.initialize(metadataSettings);
-        globalResourcesCacheScheduler = null;
         GLOBAL_TENANT_ID = metadataSettings.get(CommonValue.REMOTE_METADATA_GLOBAL_TENANT_ID_KEY);
-        CACHE_REFRESH_INTERVAL = Optional.ofNullable(metadataSettings.get(CommonValue.REMOTE_METADATA_CACHE_REFRESH_INTERVAL_KEY))
-            .map(value -> {
-                try {
-                    return TimeValue.timeValueMinutes(Long.parseLong(value));
-                } catch (NumberFormatException e) {
-                    return TimeValue.timeValueMinutes(DEFAULT_REFRESH_MINUTES);
-                }
-            })
-            .orElse(TimeValue.timeValueMinutes(DEFAULT_REFRESH_MINUTES));
-        if (GLOBAL_TENANT_ID != null) {
-            cacheGlobalResources();
-            startGlobalResourcesCacheScheduler();
-        }
         this.client = client;
     }
 
@@ -196,8 +173,7 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
             client.get(
                 getRequest,
                 ActionListener.wrap(
-                    // Only fallback to global resource when GLOBAL_TENANT_ID is set && not found in index
-                    getResponse -> completeWithGlobalResourceIfNotFound(getResponse, request, future),
+                    getResponse -> future.complete(new GetDataObjectResponse(getResponse)),
                     e -> future.completeExceptionally(
                         new OpenSearchStatusException(
                             "Failed to get data object from index " + request.index(),
@@ -209,21 +185,6 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
             );
             return future;
         });
-    }
-
-    private void completeWithGlobalResourceIfNotFound(
-        org.opensearch.action.get.GetResponse response,
-        GetDataObjectRequest request,
-        CompletableFuture<GetDataObjectResponse> future
-    ) {
-        if (!response.isExists() && GLOBAL_TENANT_ID != null && !GLOBAL_TENANT_ID.equals(request.tenantId())) {
-            CompletionStage<GetDataObjectResponse> cachedResponse = getGlobalResourceDataFromCache(request);
-            if (cachedResponse != null) {
-                cachedResponse.thenAccept(future::complete);
-                return;
-            }
-        }
-        future.complete(new GetDataObjectResponse(response));
     }
 
     private GetRequest createGetRequest(GetDataObjectRequest request) {
@@ -423,104 +384,12 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
 
     @Override
     public void close() throws Exception {
-        // the NodeClient is managed by OpenSearch, only cache refresh scheduler needs to be canceled manually
-        stopGlobalResourcesCacheScheduler();
+        // No resources to close, OpenSearch manages the NodeClient
     }
 
     @Override
     public boolean isGlobalResource(String index, String id) {
-        return GLOBAL_RESOURCES_CACHE.containsKey(buildGlobalCacheKey(index, id));
-    }
-
-    private void cacheGlobalResources() {
-        if (client == null || this.tenantIdField == null || this.GLOBAL_TENANT_ID == null) {
-            log.warn("Unable to cache global resources");
-            return;
-        }
-        try {
-            // Create a term query for the global tenant ID like the following:
-            // {"query": {"term": {"<tenantIdField>": {"value": "<GLOBAL_TENANT_ID>"}}}}
-            TermQueryBuilder termQuery = QueryBuilders.termQuery(this.tenantIdField, this.GLOBAL_TENANT_ID);
-            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().query(termQuery).fetchSource(true).size(10000);
-            SearchRequest request = new SearchRequest();
-            request.source(searchSourceBuilder);
-
-            client.searchAsync(request).whenComplete((searchResponse, throwable) -> {
-                if (throwable != null) {
-                    log.error("Failed to cache global resources", throwable);
-                    return;
-                }
-                log.info("Found {} global resources", searchResponse.getHits().getTotalHits());
-
-                // Cache the global resources
-                searchResponse.getHits().forEach(hit -> {
-                    String index = hit.getIndex();
-                    String id = hit.getId();
-                    Map<String, Object> source = hit.getSourceAsMap();
-                    GLOBAL_RESOURCES_CACHE.put(buildGlobalCacheKey(index, id), source);
-                });
-                log.info("Global resources cache updated with {} entries", GLOBAL_RESOURCES_CACHE.size());
-            });
-        } catch (Exception e) {
-            log.error("Error setting up global resources cache", e);
-        }
-    }
-
-    private CompletionStage<GetDataObjectResponse> getGlobalResourceDataFromCache(GetDataObjectRequest request) {
-        String cacheKey = buildGlobalCacheKey(request.index(), request.id());
-        if (GLOBAL_RESOURCES_CACHE.containsKey(cacheKey)) {
-            Map<String, Object> cachedSource = GLOBAL_RESOURCES_CACHE.get(cacheKey);
-            // Replace tenant ID in cached response to match request tenant
-            Map<String, Object> modifiedSource = new java.util.HashMap<>(cachedSource);
-            modifiedSource.put(CommonValue.TENANT_ID_FIELD_KEY, request.tenantId());
-
-            try {
-                // Create a mock GetResponse with cached data
-                String responseJson = String.format(
-                    Locale.ROOT,
-                    "{\"_index\":\"%s\",\"_id\":\"%s\",\"found\":true,\"_source\":%s}",
-                    request.index(),
-                    request.id(),
-                    new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(modifiedSource)
-                );
-
-                return CompletableFuture.completedFuture(
-                    GetDataObjectResponse.builder()
-                        .id(request.id())
-                        .parser(org.opensearch.remote.metadata.common.SdkClientUtils.createParser(responseJson))
-                        .source(modifiedSource)
-                        .build()
-                );
-            } catch (Exception e) {
-                log.error("Failed to create response from cached global resource", e);
-                return null;
-            }
-        }
-        return null;
-    }
-
-    private void startGlobalResourcesCacheScheduler() {
-        if (this.threadPool == null) {
-            log.warn("ThreadPool is not available, global resources cache will not be automatically refreshed");
-            return;
-        }
-
-        log.info("Starting global resources cache scheduler with refresh interval: {}", CACHE_REFRESH_INTERVAL);
-        globalResourcesCacheScheduler = threadPool.scheduleWithFixedDelay(() -> {
-            try {
-                log.debug("Refreshing global resources cache");
-                cacheGlobalResources();
-            } catch (Exception e) {
-                log.error("Error refreshing global resources cache", e);
-            }
-        }, CACHE_REFRESH_INTERVAL, ThreadPool.Names.GENERIC);
-    }
-
-    private void stopGlobalResourcesCacheScheduler() {
-        if (this.globalResourcesCacheScheduler != null) {
-            this.globalResourcesCacheScheduler.cancel();
-            this.globalResourcesCacheScheduler = null;
-            log.info("Stopped global resources cache scheduler");
-        }
+        // TODO: check whether the tenant id in the document matches global tenant ID
+        return false;
     }
 }
