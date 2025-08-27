@@ -306,7 +306,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
             throw new OpenSearchStatusException("Request body validation failed.", RestStatus.BAD_REQUEST, e);
         }
         final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
-        if (GLOBAL_TENANT_ID.equals(tenantId)) {
+        if (GLOBAL_TENANT_ID != null && GLOBAL_TENANT_ID.equals(tenantId)) {
             throw new OpenSearchStatusException(
                 "Global tenant id is reserved for internal use, do not accept passing it from request!",
                 RestStatus.BAD_REQUEST
@@ -562,7 +562,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
             throw new OpenSearchStatusException("Request body validation failed.", RestStatus.BAD_REQUEST, e);
         }
         final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
-        if (GLOBAL_TENANT_ID.equals(tenantId)) {
+        if (GLOBAL_TENANT_ID != null && GLOBAL_TENANT_ID.equals(tenantId)) {
             throw new OpenSearchStatusException("Global tenant id is reserved for internal use.", RestStatus.INTERNAL_SERVER_ERROR);
         }
         return doPrivileged(() -> {
@@ -686,7 +686,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         Boolean isMultiTenancyEnabled
     ) {
         final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
-        if (GLOBAL_TENANT_ID.equals(tenantId)) {
+        if (GLOBAL_TENANT_ID != null && GLOBAL_TENANT_ID.equals(tenantId)) {
             throw new OpenSearchStatusException(
                 "Global tenant id is reserved for internal use, do not accept passing it from request!",
                 RestStatus.BAD_REQUEST
