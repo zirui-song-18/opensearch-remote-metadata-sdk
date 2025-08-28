@@ -966,7 +966,11 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
             throw new IllegalStateException("REGION environment variable needs to be set!");
         }
         return doPrivileged(
-                () -> DynamoDbAsyncClient.builder().httpClient(NettyNioAsyncHttpClient.builder().build()).region(Region.of(region)).credentialsProvider(createCredentialsProvider()).build()
+            () -> DynamoDbAsyncClient.builder()
+                .httpClient(NettyNioAsyncHttpClient.builder().build())
+                .region(Region.of(region))
+                .credentialsProvider(createCredentialsProvider())
+                .build()
         );
     }
 
