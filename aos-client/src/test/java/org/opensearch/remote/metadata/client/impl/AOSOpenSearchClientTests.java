@@ -75,6 +75,7 @@ class AOSOpenSearchClientTests {
 
     @BeforeEach
     void setUp() {
+        AOSOpenSearchClient.GLOBAL_TENANT_ID = null;
         MockitoAnnotations.openMocks(this);
         aosOpenSearchClient = new AOSOpenSearchClient();
     }
@@ -146,8 +147,6 @@ class AOSOpenSearchClientTests {
             () -> aosOpenSearchClient.initialize(metadataSettings)
         ); // This exception is due to null tenantIdField, which cannot be set during tests
         assertEquals(GLOBAL_TENANT_ID, AOSOpenSearchClient.GLOBAL_TENANT_ID);
-
-        AOSOpenSearchClient.GLOBAL_TENANT_ID = null;
     }
 
     @Test
@@ -159,7 +158,6 @@ class AOSOpenSearchClientTests {
 
     @Test
     void testGetDataObjectWithoutGlobalTenant() throws IOException {
-        AOSOpenSearchClient.GLOBAL_TENANT_ID = null;
         aosOpenSearchClient.openSearchAsyncClient = mockOpenSearchAsyncClient;
 
         GetDataObjectRequest request = GetDataObjectRequest.builder().index(TEST_INDEX).id(TEST_ID).tenantId(TEST_TENANT_ID).build();
@@ -167,7 +165,7 @@ class AOSOpenSearchClientTests {
         GetDataObjectResponse mockResponse = GetDataObjectResponse.builder()
             .index(TEST_INDEX)
             .id(TEST_ID)
-            .source(Map.of("test", "data"))
+            .source(Map.of("test", "data", "tenant_id", TEST_TENANT_ID))
             .build();
         when(mockOpenSearchAsyncClient.get(any(org.opensearch.client.opensearch.core.GetRequest.class), any(Class.class))).thenReturn(
             CompletableFuture.completedFuture(mockResponse)
@@ -180,6 +178,7 @@ class AOSOpenSearchClientTests {
         ).toCompletableFuture();
 
         assertNotNull(result);
+        // Should only call get once since no global tenant fallback logic
         verify(mockOpenSearchAsyncClient, times(1)).get(any(org.opensearch.client.opensearch.core.GetRequest.class), any(Class.class));
     }
 
@@ -196,26 +195,6 @@ class AOSOpenSearchClientTests {
             settings.put(REMOTE_METADATA_SERVICE_NAME_KEY, "es");
             client.initialize(settings);
         });
-    }
-
-    @Test
-    void testGetDataObjectAsyncWithoutGlobalTenant() throws IOException {
-        AOSOpenSearchClient.GLOBAL_TENANT_ID = null;
-        aosOpenSearchClient.openSearchAsyncClient = mockOpenSearchAsyncClient;
-
-        GetDataObjectRequest request = GetDataObjectRequest.builder().index(TEST_INDEX).id(TEST_ID).tenantId(TEST_TENANT_ID).build();
-
-        when(mockOpenSearchAsyncClient.get(any(org.opensearch.client.opensearch.core.GetRequest.class), any(Class.class))).thenReturn(
-            CompletableFuture.completedFuture(null)
-        );
-
-        CompletableFuture<GetDataObjectResponse> result = aosOpenSearchClient.getDataObjectAsync(
-            request,
-            testThreadPool.executor(TEST_THREAD_POOL),
-            true
-        ).toCompletableFuture();
-
-        assertNotNull(result);
     }
 
     @Test
@@ -242,8 +221,6 @@ class AOSOpenSearchClientTests {
 
         assertNotNull(result);
         verify(mockOpenSearchAsyncClient, times(1)).get(any(org.opensearch.client.opensearch.core.GetRequest.class), any(Class.class));
-
-        AOSOpenSearchClient.GLOBAL_TENANT_ID = null;
     }
 
     @Test
