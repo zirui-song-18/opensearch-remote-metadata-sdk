@@ -13,10 +13,12 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse;
 
@@ -123,7 +125,12 @@ public class DDBOpenSearchClientTests {
     private ArgumentCaptor<UpdateItemRequest> updateItemRequestArgumentCaptor;
     @Captor
     private ArgumentCaptor<SearchDataObjectRequest> searchDataObjectRequestArgumentCaptor;
+    @Captor
+    private ArgumentCaptor<DescribeTableRequest> describeTableRequestArgumentCaptor;
+    @Captor
+    private ArgumentCaptor<QueryRequest> queryRequestArgumentCaptor;
     private TestDataObject testDataObject;
+    private DDBOpenSearchClient ddbClient;
 
     private static TestThreadPool testThreadPool = new TestThreadPool(
         DDBOpenSearchClientTests.class.getName(),
@@ -1159,5 +1166,116 @@ public class DDBOpenSearchClientTests {
         assertEquals("%22%3C%3E", response.getId());
         assertEquals("test%20index", response.getIndex());
         assertEquals("created", response.getResult().toString().toLowerCase());
+    }
+
+    @Test
+    public void testIsGlobalResource_WithoutGlobalTenantId() {
+        ddbClient = new DDBOpenSearchClient(dynamoDbAsyncClient, aosOpenSearchClient, TENANT_ID_FIELD);
+
+        // Test when no global resources cached
+        assertFalse(ddbClient.isGlobalResource(TEST_INDEX, TEST_ID));
+        assertFalse(ddbClient.isGlobalResource("other_index", "other_id"));
+    }
+
+    @Test
+    public void testGetDataObject_WithoutGlobalTenantId() throws IOException {
+        // Test normal behavior when GLOBAL_TENANT_ID is null
+        GetDataObjectRequest getRequest = GetDataObjectRequest.builder().index(TEST_INDEX).id(TEST_ID).tenantId(TENANT_ID).build();
+
+        when(dynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(
+            CompletableFuture.completedFuture(
+                GetItemResponse.builder()
+                    .item(
+                        Map.of(
+                            SOURCE,
+                            AttributeValue.builder().m(Map.of("data", AttributeValue.builder().s("test_data").build())).build(),
+                            SEQ_NUM,
+                            AttributeValue.builder().n("1").build()
+                        )
+                    )
+                    .build()
+            )
+        );
+
+        GetDataObjectResponse response = sdkClient.getDataObjectAsync(getRequest, testThreadPool.executor(TEST_THREAD_POOL))
+            .toCompletableFuture()
+            .join();
+
+        assertEquals(TEST_ID, response.id());
+        assertEquals("test_data", response.source().get("data"));
+        verify(dynamoDbAsyncClient, times(1)).getItem(any(GetItemRequest.class));
+    }
+
+    @Test
+    public void testPutDataObject_NullGlobalTenantId_NoException() {
+        // Test that when GLOBAL_TENANT_ID is null, no exception is thrown for any tenant ID
+        PutDataObjectRequest putRequest = PutDataObjectRequest.builder()
+            .index(TEST_INDEX)
+            .id(TEST_ID)
+            .tenantId("any_tenant_id")
+            .dataObject(testDataObject)
+            .build();
+
+        when(dynamoDbAsyncClient.putItem(any(PutItemRequest.class))).thenReturn(
+            CompletableFuture.completedFuture(PutItemResponse.builder().build())
+        );
+
+        // Should not throw exception when GLOBAL_TENANT_ID is null
+        PutDataObjectResponse response = sdkClient.putDataObjectAsync(putRequest, testThreadPool.executor(TEST_THREAD_POOL))
+            .toCompletableFuture()
+            .join();
+
+        assertEquals(TEST_ID, response.id());
+    }
+
+    @Test
+    public void testUpdateDataObject_NullGlobalTenantId_NoException() {
+        // Test that when GLOBAL_TENANT_ID is null, no exception is thrown for any tenant ID
+        UpdateDataObjectRequest updateRequest = UpdateDataObjectRequest.builder()
+            .index(TEST_INDEX)
+            .id(TEST_ID)
+            .tenantId("any_tenant_id")
+            .dataObject(testDataObject)
+            .build();
+
+        GetItemResponse getItemResponse = GetItemResponse.builder()
+            .item(
+                Map.of(SEQ_NUM, AttributeValue.builder().n("0").build(), SOURCE, AttributeValue.builder().m(Collections.emptyMap()).build())
+            )
+            .build();
+        when(dynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(getItemResponse));
+        when(dynamoDbAsyncClient.updateItem(any(UpdateItemRequest.class))).thenReturn(
+            CompletableFuture.completedFuture(UpdateItemResponse.builder().build())
+        );
+
+        // Should not throw exception when GLOBAL_TENANT_ID is null
+        UpdateDataObjectResponse response = sdkClient.updateDataObjectAsync(updateRequest, testThreadPool.executor(TEST_THREAD_POOL))
+            .toCompletableFuture()
+            .join();
+
+        assertEquals(TEST_ID, response.id());
+    }
+
+    @Test
+    public void testDeleteDataObject_NullGlobalTenantId_NoException() {
+        // Test that when GLOBAL_TENANT_ID is null, no exception is thrown for any tenant ID
+        DeleteDataObjectRequest deleteRequest = DeleteDataObjectRequest.builder()
+            .index(TEST_INDEX)
+            .id(TEST_ID)
+            .tenantId("any_tenant_id")
+            .build();
+
+        when(dynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(
+            CompletableFuture.completedFuture(
+                DeleteItemResponse.builder().attributes(Map.of(SEQ_NUM, AttributeValue.builder().n("5").build())).build()
+            )
+        );
+
+        // Should not throw exception when GLOBAL_TENANT_ID is null
+        DeleteDataObjectResponse response = sdkClient.deleteDataObjectAsync(deleteRequest, testThreadPool.executor(TEST_THREAD_POOL))
+            .toCompletableFuture()
+            .join();
+
+        assertEquals(TEST_ID, response.id());
     }
 }
