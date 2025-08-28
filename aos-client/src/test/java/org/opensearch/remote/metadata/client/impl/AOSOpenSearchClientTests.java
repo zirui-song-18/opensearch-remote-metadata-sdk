@@ -1,7 +1,14 @@
 package org.opensearch.remote.metadata.client.impl;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+
 import org.opensearch.OpenSearchException;
+import org.opensearch.client.json.jackson.JacksonJsonpMapper;
 import org.opensearch.client.opensearch.OpenSearchAsyncClient;
+import org.opensearch.client.opensearch.core.GetResponse;
+import org.opensearch.client.transport.OpenSearchTransport;
 import org.opensearch.client.transport.aws.AwsSdk2Transport;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
@@ -58,6 +65,9 @@ class AOSOpenSearchClientTests {
     @Mock
     private OpenSearchAsyncClient mockOpenSearchAsyncClient;
 
+    @Mock
+    private OpenSearchTransport transport;
+
     private static TestThreadPool testThreadPool = new TestThreadPool(
         AOSOpenSearchClientTests.class.getName(),
         new ScalingExecutorBuilder(
@@ -79,6 +89,13 @@ class AOSOpenSearchClientTests {
         AOSOpenSearchClient.GLOBAL_TENANT_ID = null;
         MockitoAnnotations.openMocks(this);
         aosOpenSearchClient = new AOSOpenSearchClient();
+        when(mockOpenSearchAsyncClient._transport()).thenReturn(transport);
+        when(transport.jsonpMapper()).thenReturn(
+            new JacksonJsonpMapper(
+                new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                    .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+            )
+        );
     }
 
     @Test
@@ -161,8 +178,10 @@ class AOSOpenSearchClientTests {
     @Test
     void testGetDataObjectWithoutGlobalTenant() throws IOException {
         aosOpenSearchClient.openSearchAsyncClient = mockOpenSearchAsyncClient;
-
-        GetDataObjectRequest request = GetDataObjectRequest.builder().index(TEST_INDEX).id(TEST_ID).tenantId(TEST_TENANT_ID).build();
+        GetDataObjectRequest request = mock(GetDataObjectRequest.class);
+        when(request.index()).thenReturn(TEST_INDEX);
+        when(request.id()).thenReturn(TEST_ID);
+        when(request.tenantId()).thenReturn(TEST_TENANT_ID);
 
         GetDataObjectResponse mockResponse = GetDataObjectResponse.builder()
             .index(TEST_INDEX)
@@ -223,6 +242,39 @@ class AOSOpenSearchClientTests {
 
         assertNotNull(result);
         verify(mockOpenSearchAsyncClient, times(1)).get(any(org.opensearch.client.opensearch.core.GetRequest.class), any(Class.class));
+    }
+
+    @Test
+    void testGetDataObjectWithGlobalTenantDataNotFound() throws IOException {
+        AOSOpenSearchClient.GLOBAL_TENANT_ID = GLOBAL_TENANT_ID;
+        aosOpenSearchClient.openSearchAsyncClient = mockOpenSearchAsyncClient;
+
+        // Mock transport and mapper to avoid null pointer
+        OpenSearchTransport mockTransport = mock(OpenSearchTransport.class);
+        JacksonJsonpMapper mapper = new JacksonJsonpMapper(
+            new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+        );
+        when(mockOpenSearchAsyncClient._transport()).thenReturn(mockTransport);
+        when(mockTransport.jsonpMapper()).thenReturn(mapper);
+        aosOpenSearchClient.mapper = mapper;
+
+        GetDataObjectRequest request = GetDataObjectRequest.builder().index(TEST_INDEX).id(TEST_ID).tenantId(TEST_TENANT_ID).build();
+
+        GetResponse<?> getResponse = new GetResponse.Builder<>().index(TEST_INDEX).id(TEST_ID).found(false).build();
+
+        when(mockOpenSearchAsyncClient.get(any(org.opensearch.client.opensearch.core.GetRequest.class), any(Class.class))).thenReturn(
+            CompletableFuture.completedFuture(getResponse)
+        ).thenReturn(CompletableFuture.completedFuture(getResponse));
+
+        CompletableFuture<GetDataObjectResponse> result = aosOpenSearchClient.getDataObjectAsync(
+            request,
+            testThreadPool.executor(TEST_THREAD_POOL),
+            true
+        ).toCompletableFuture();
+
+        assertNotNull(result);
+        verify(mockOpenSearchAsyncClient, times(2)).get(any(org.opensearch.client.opensearch.core.GetRequest.class), any(Class.class));
     }
 
     @Test
