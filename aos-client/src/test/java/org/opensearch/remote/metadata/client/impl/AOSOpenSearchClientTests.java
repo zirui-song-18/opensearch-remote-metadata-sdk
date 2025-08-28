@@ -3,7 +3,6 @@ package org.opensearch.remote.metadata.client.impl;
 import org.opensearch.OpenSearchException;
 import org.opensearch.client.opensearch.OpenSearchAsyncClient;
 import org.opensearch.client.transport.aws.AwsSdk2Transport;
-import org.opensearch.client.util.MissingRequiredPropertyException;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.OpenSearchExecutors;
@@ -18,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -32,7 +32,8 @@ import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_
 import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_SERVICE_NAME_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_TYPE_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_OPENSEARCH;
-import static org.apache.lucene.tests.util.LuceneTestCase.expectThrows;
+import static org.opensearch.remote.metadata.common.CommonValue.TENANT_ID_FIELD_KEY;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -141,19 +142,20 @@ class AOSOpenSearchClientTests {
         metadataSettings.put(REMOTE_METADATA_ENDPOINT_KEY, "https://example.amazonaws.com");
         metadataSettings.put(REMOTE_METADATA_REGION_KEY, "us-west-2");
         metadataSettings.put(REMOTE_METADATA_SERVICE_NAME_KEY, "es");
+        metadataSettings.put(TENANT_ID_FIELD_KEY, "tenant_id");
         metadataSettings.put(REMOTE_METADATA_GLOBAL_TENANT_ID_KEY, GLOBAL_TENANT_ID);
-        MissingRequiredPropertyException exception = expectThrows(
-            MissingRequiredPropertyException.class,
-            () -> aosOpenSearchClient.initialize(metadataSettings)
-        ); // This exception is due to null tenantIdField, which cannot be set during tests
+        aosOpenSearchClient.initialize(metadataSettings);
         assertEquals(GLOBAL_TENANT_ID, AOSOpenSearchClient.GLOBAL_TENANT_ID);
     }
 
     @Test
     void testBuildGlobalCacheKey() {
         // Test buildGlobalCacheKey indirectly through isGlobalResource
-        assertFalse(aosOpenSearchClient.isGlobalResource(TEST_INDEX, TEST_ID));
-        assertFalse(aosOpenSearchClient.isGlobalResource("index", "id"));
+        assertEquals(
+            String.format(Locale.ROOT, "%s:%s", TEST_INDEX, TEST_ID),
+            aosOpenSearchClient.buildGlobalCacheKey(TEST_INDEX, TEST_ID)
+        );
+        assertNotEquals(String.format(Locale.ROOT, "%s:%s", "foo", "far"), aosOpenSearchClient.buildGlobalCacheKey(TEST_INDEX, TEST_ID));
     }
 
     @Test
