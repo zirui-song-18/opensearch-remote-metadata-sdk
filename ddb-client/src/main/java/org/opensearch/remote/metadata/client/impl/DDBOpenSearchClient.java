@@ -18,6 +18,7 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.ContainerCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -965,7 +966,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
             throw new IllegalStateException("REGION environment variable needs to be set!");
         }
         return doPrivileged(
-            () -> DynamoDbAsyncClient.builder().region(Region.of(region)).credentialsProvider(createCredentialsProvider()).build()
+                () -> DynamoDbAsyncClient.builder().httpClient(NettyNioAsyncHttpClient.builder().build()).region(Region.of(region)).credentialsProvider(createCredentialsProvider()).build()
         );
     }
 
