@@ -73,6 +73,7 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
 
     private final Client client;
     private final String GLOBAL_TENANT_ID;
+    private static final String DEFAULT_TENANT = "DEFAULT_TENANT";
 
     @Override
     public boolean supportsMetadataType(String metadataType) {
@@ -97,6 +98,13 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
         Executor executor,
         Boolean isMultiTenancyEnabled
     ) {
+        final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
+        if (GLOBAL_TENANT_ID != null && GLOBAL_TENANT_ID.equals(tenantId)) {
+            throw new OpenSearchStatusException(
+                "Global tenant id is reserved for internal use, do not accept passing it from request!",
+                RestStatus.BAD_REQUEST
+            );
+        }
         CompletableFuture<PutDataObjectResponse> future = new CompletableFuture<>();
         return doPrivileged(() -> {
             try {
@@ -214,6 +222,13 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
         Executor executor,
         Boolean isMultiTenancyEnabled
     ) {
+        final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
+        if (GLOBAL_TENANT_ID != null && GLOBAL_TENANT_ID.equals(tenantId)) {
+            throw new OpenSearchStatusException(
+                "Global tenant id is reserved for internal use, do not accept passing it from request!",
+                RestStatus.BAD_REQUEST
+            );
+        }
         CompletableFuture<UpdateDataObjectResponse> future = new CompletableFuture<>();
         return doPrivileged(() -> {
             try {
@@ -279,6 +294,13 @@ public class LocalClusterIndicesClient extends AbstractSdkClient {
         Executor executor,
         Boolean isMultiTenancyEnabled
     ) {
+        final String tenantId = request.tenantId() != null ? request.tenantId() : DEFAULT_TENANT;
+        if (GLOBAL_TENANT_ID != null && GLOBAL_TENANT_ID.equals(tenantId)) {
+            throw new OpenSearchStatusException(
+                "Global tenant id is reserved for internal use, do not accept passing it from request!",
+                RestStatus.BAD_REQUEST
+            );
+        }
         CompletableFuture<DeleteDataObjectResponse> future = new CompletableFuture<>();
         return doPrivileged(() -> {
             log.info("Deleting {} from {}", request.id(), request.index());
