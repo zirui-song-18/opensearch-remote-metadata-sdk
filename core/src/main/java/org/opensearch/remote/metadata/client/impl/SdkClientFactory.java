@@ -93,10 +93,10 @@ public class SdkClientFactory {
                 SdkClientDelegate delegate = iterator.next();
                 if (delegate.supportsMetadataType(remoteMetadataType)) {
                     log.info("Using {} as metadata store.", remoteMetadataType);
-                    delegate.initialize(metadataSettings);
                     if (threadPool != null && delegate instanceof AbstractSdkClient) {
                         ((AbstractSdkClient) delegate).setThreadPool(threadPool);
                     }
+                    delegate.initialize(metadataSettings);
                     return new SdkClient(delegate, defaultExecutor, multiTenancy);
                 }
             }

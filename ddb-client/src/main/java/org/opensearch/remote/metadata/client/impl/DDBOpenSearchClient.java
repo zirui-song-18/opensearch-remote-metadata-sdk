@@ -1001,7 +1001,6 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
     private void stopGlobalResourcesCacheScheduler() {
         if (globalResourcesCacheScheduler != null) {
             globalResourcesCacheScheduler.cancel();
-            globalResourcesCacheScheduler = null;
             log.info("Stopped global resources cache scheduler");
         }
     }

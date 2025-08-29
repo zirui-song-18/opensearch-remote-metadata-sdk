@@ -8,6 +8,8 @@
  */
 package org.opensearch.remote.metadata.client.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.ContainerCredentialsProvider;
@@ -30,9 +32,11 @@ import org.opensearch.core.common.Strings;
 import org.opensearch.remote.metadata.client.GetDataObjectRequest;
 import org.opensearch.remote.metadata.client.GetDataObjectResponse;
 import org.opensearch.remote.metadata.client.SdkClient;
+import org.opensearch.remote.metadata.common.SdkClientUtils;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -56,6 +60,7 @@ public class AOSOpenSearchClient extends RemoteClusterIndicesClient {
     public static String GLOBAL_TENANT_ID;
     private static final Map<String, Map<String, Object>> GLOBAL_RESOURCES_CACHE = new ConcurrentHashMap<>();
     private static final TimeValue CACHE_REFRESH_INTERVAL = TimeValue.timeValueMinutes(5);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Override
     public boolean supportsMetadataType(String metadataType) {
@@ -85,11 +90,6 @@ public class AOSOpenSearchClient extends RemoteClusterIndicesClient {
     }
 
     private void cacheGlobalResources() {
-        if (openSearchAsyncClient == null) {
-            log.warn("OpenSearch client not initialized, skipping global resources caching");
-            return;
-        }
-
         // Search for all documents with global tenant ID across all indices
         TermQuery globalTenantQuery = new TermQuery.Builder().field(this.tenantIdField).value(FieldValue.of(GLOBAL_TENANT_ID)).build();
 
@@ -130,7 +130,6 @@ public class AOSOpenSearchClient extends RemoteClusterIndicesClient {
     private void stopGlobalResourcesCacheScheduler() {
         if (globalResourcesCacheScheduler != null) {
             globalResourcesCacheScheduler.cancel();
-            globalResourcesCacheScheduler = null;
             log.info("Stopped global resources cache scheduler");
         }
     }
@@ -215,7 +214,7 @@ public class AOSOpenSearchClient extends RemoteClusterIndicesClient {
         if (GLOBAL_RESOURCES_CACHE.containsKey(cacheKey)) {
             Map<String, Object> cachedSource = GLOBAL_RESOURCES_CACHE.get(cacheKey);
             // Replace tenant ID in cached response to match request tenant
-            Map<String, Object> modifiedSource = new java.util.HashMap<>(cachedSource);
+            Map<String, Object> modifiedSource = new HashMap<>(cachedSource);
             modifiedSource.put(TENANT_ID_FIELD_KEY, request.tenantId());
 
             try {
@@ -224,13 +223,13 @@ public class AOSOpenSearchClient extends RemoteClusterIndicesClient {
                     "{\"_index\":\"%s\",\"_id\":\"%s\",\"found\":true,\"_source\":%s}",
                     request.index(),
                     request.id(),
-                    new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(modifiedSource)
+                    OBJECT_MAPPER.writeValueAsString(modifiedSource)
                 );
 
                 return CompletableFuture.completedFuture(
                     GetDataObjectResponse.builder()
                         .id(request.id())
-                        .parser(org.opensearch.remote.metadata.common.SdkClientUtils.createParser(responseJson))
+                        .parser(SdkClientUtils.createParser(responseJson))
                         .source(modifiedSource)
                         .build()
                 );
