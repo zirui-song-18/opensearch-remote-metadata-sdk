@@ -105,7 +105,7 @@ import static org.opensearch.common.util.concurrent.ThreadContextAccess.doPrivil
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_PRIMARY_TERM;
 import static org.opensearch.index.seqno.SequenceNumbers.UNASSIGNED_SEQ_NO;
 import static org.opensearch.remote.metadata.common.CommonValue.AWS_DYNAMO_DB;
-import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_CACHE_REFRESH_INTERVAL_KEY;
+import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_GLOBAL_RESOURCE_CACHE_REFRESH_INTERVAL_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.REMOTE_METADATA_GLOBAL_TENANT_ID_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.TENANT_ID_FIELD_KEY;
 import static org.opensearch.remote.metadata.common.CommonValue.VALID_AWS_OPENSEARCH_SERVICE_NAMES;
@@ -153,7 +153,7 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
         this.aosOpenSearchClient = new AOSOpenSearchClient();
         this.aosOpenSearchClient.initialize(metadataSettings);
         GLOBAL_TENANT_ID = metadataSettings.get(REMOTE_METADATA_GLOBAL_TENANT_ID_KEY);
-        CACHE_REFRESH_INTERVAL = Optional.ofNullable(metadataSettings.get(REMOTE_METADATA_CACHE_REFRESH_INTERVAL_KEY)).map(value -> {
+        CACHE_REFRESH_INTERVAL = Optional.ofNullable(metadataSettings.get(REMOTE_METADATA_GLOBAL_RESOURCE_CACHE_REFRESH_INTERVAL_KEY)).map(value -> {
             try {
                 return TimeValue.timeValueMinutes(Long.parseLong(value));
             } catch (NumberFormatException e) {
