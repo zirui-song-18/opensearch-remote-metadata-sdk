@@ -251,7 +251,10 @@ public class DDBOpenSearchClient extends AbstractSdkClient {
                         });
                 }
             });
-        });
+        }).exceptionally((throwable -> {
+            log.error("Failed to list tables!", throwable);
+            return null;
+        }));
     }
 
     private Map<String, CompletableFuture<DescribeTableResponse>> getDescribeTableCompletableFutureMap(ListTablesResponse x) {
